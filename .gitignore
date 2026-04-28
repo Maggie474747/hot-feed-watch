@@ -1,0 +1,14 @@
+# Python 虚拟环境（绝对不能传！）
+venv/
+__pycache__/
+*.pyc
+
+# Mac 系统文件
+.DS_Store
+
+# 编辑器配置
+.vscode/
+.idea/
+
+# 环境变量（以后会有 API key 之类的敏感信息）
+.env
