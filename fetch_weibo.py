@@ -76,10 +76,16 @@ def fetch_weibo_hot(top_n: int = 10):
         emoji = LABEL_EMOJI.get(label_name, "")
         category = item.get("category", "")
 
-        # 微博搜索链接
-        # 如果 word 已经带 # 就保留，否则不强加
-        search_query = item.get("word_scheme", f"#{word}#")
-        url = f"https://s.weibo.com/weibo?q={search_query}"
+        # 微博搜索链接：用 word_scheme 字段（已经是 %23xxx%23 格式）
+        # 如果没有 word_scheme，用 word 包上 # 号
+        from urllib.parse import quote
+        word_scheme = item.get("word_scheme")
+        if word_scheme:
+            # word_scheme 通常是 "#xxx#" 形式，直接 quote
+            search_query = quote(word_scheme)
+        else:
+            search_query = quote(f"#{word}#")
+        url = f"https://s.weibo.com/weibo?q={search_query}&Refer=top"
 
         normalized.append({
             "rank": rank,
