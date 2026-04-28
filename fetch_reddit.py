@@ -71,17 +71,32 @@ def fetch_reddit_top(top_n: int = 10):
         permalink = post.get("permalink", "")
         url = f"https://www.reddit.com{permalink}"
 
-        # 缩略图: Reddit 帖子的预览图（如果有）
-        thumbnail = post.get("thumbnail", "")
-        # Reddit thumbnail 有时候是 "self"/"default"/"nsfw" 这种特殊值, 不是真图
-        if thumbnail in ("self", "default", "nsfw", "image", ""):
-            # 试试从 preview 拿
+# 缩略图：按可靠性优先级尝试多个来源
+        # Reddit thumbnail 字段有时候是 "self"/"default"/"nsfw" 等特殊值，不是真图
+        thumbnail = ""
+
+        # 优先级 1：post 自带的 media oembed thumbnail（最稳，多为 YouTube/外站官方缩略图）
+        media = post.get("media") or {}
+        oembed = media.get("oembed") or {}
+        if oembed.get("thumbnail_url"):
+            thumbnail = oembed["thumbnail_url"]
+
+        # 优先级 2：preview.images[0].source.url（Reddit 自己的缩略图）
+        if not thumbnail:
             preview = post.get("preview", {}).get("images", [])
             if preview:
                 source = preview[0].get("source", {})
-                thumbnail = source.get("url", "").replace("&amp;", "&")
-            else:
-                thumbnail = ""
+                thumbnail = source.get("url", "")
+
+        # 优先级 3：post.thumbnail（最不稳定，但作为兜底）
+        if not thumbnail:
+            tn = post.get("thumbnail", "")
+            if tn not in ("self", "default", "nsfw", "image", "spoiler", ""):
+                thumbnail = tn
+
+        # HTML 实体解码（Reddit API 返回的 URL 里 & 被转义成 &amp;）
+        if thumbnail:
+            thumbnail = thumbnail.replace("&amp;", "&")
 
         normalized.append({
             "rank": rank,
