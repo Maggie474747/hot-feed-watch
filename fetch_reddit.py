@@ -2,21 +2,37 @@
 抓取 Reddit r/videos 当日 Top 10
 """
 import json
-import requests
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-# Reddit 给开发者的"魔法":URL 后面加 .json 就直接吐 JSON
-# t=day 表示"过去 24 小时", limit=15 多拿几条以防有 sticky/pinned
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# Reddit 给开发者的 "魔法": URL 后面加 .json 就直接吐 JSON
+# t=day 表示 "过去 24 小时", limit=15 多拿几条以防有 sticky/pinned
 URL = "https://www.reddit.com/r/videos/top.json"
 PARAMS = {"t": "day", "limit": 15}
 
 HEADERS = {
-    # Reddit 强制要求 User-Agent 不能是默认的, 否则给你 429
     # 格式建议: <platform>:<app-name>:<version> (by /u/<username>)
     "User-Agent": "macos:hot-feed-watch:0.1 (by /u/Maggie474747)",
     "Accept": "application/json",
 }
+
+# 带重试的会话，提升 GitHub Actions 环境稳定性
+SESSION = requests.Session()
+RETRY = Retry(
+    total=3,
+    connect=3,
+    read=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET"],
+    raise_on_status=False,
+)
+SESSION.mount("https://", HTTPAdapter(max_retries=RETRY))
+SESSION.mount("http://", HTTPAdapter(max_retries=RETRY))
 
 DATA_DIR = Path(__file__).parent / "data"
 CST = timezone(timedelta(hours=8))
@@ -36,8 +52,14 @@ def fetch_reddit_top(top_n: int = 10):
     """抓取 Reddit r/videos 当日 Top N"""
     print(f"📡  正在抓取 Reddit r/videos · 当日 Top {top_n}...")
 
-    response = requests.get(URL, headers=HEADERS, params=PARAMS, timeout=15)
+    response = SESSION.get(URL, headers=HEADERS, params=PARAMS, timeout=20)
     print(f"     HTTP 状态码：{response.status_code}")
+
+    if response.status_code == 403:
+        raise RuntimeError("Reddit 返回 403（可能触发反爬策略）")
+    if response.status_code == 429:
+        raise RuntimeError("Reddit 返回 429（请求过于频繁）")
+
     response.raise_for_status()
     data = response.json()
 
@@ -64,15 +86,14 @@ def fetch_reddit_top(top_n: int = 10):
 
         title = post.get("title", "")
         author = post.get("author", "unknown")
-        ups = post.get("ups", 0)              # 赞数
-        score = post.get("score", 0)          # 净分（赞-踩）
+        ups = post.get("ups", 0)  # 赞数
+        score = post.get("score", 0)  # 净分（赞-踩）
         comments = post.get("num_comments", 0)
         upvote_ratio = post.get("upvote_ratio", 0)  # 0~1
         permalink = post.get("permalink", "")
         url = f"https://www.reddit.com{permalink}"
 
-# 缩略图：按可靠性优先级尝试多个来源
-        # Reddit thumbnail 字段有时候是 "self"/"default"/"nsfw" 等特殊值，不是真图
+        # 缩略图：按可靠性优先级尝试多个来源
         thumbnail = ""
 
         # 优先级 1：post 自带的 media oembed thumbnail（最稳，多为 YouTube/外站官方缩略图）
@@ -98,24 +119,26 @@ def fetch_reddit_top(top_n: int = 10):
         if thumbnail:
             thumbnail = thumbnail.replace("&amp;", "&")
 
-        normalized.append({
-            "rank": rank,
-            "title": title,
-            "author": f"u/{author}",
-            "author_avatar": "",
-            "view": ups,
-            "like": ups,
-            "reply": comments,
-            "share": 0,
-            "view_text": format_count(ups) + " upvotes",
-            "like_text": f"{int(upvote_ratio * 100)}%" if upvote_ratio else "—",
-            "reply_text": format_count(comments),
-            "share_text": post.get("link_flair_text") or "—",
-            "url": url,
-            "cover": thumbnail,
-            "bvid": post.get("id", ""),
-            "score": score,
-        })
+        normalized.append(
+            {
+                "rank": rank,
+                "title": title,
+                "author": f"u/{author}",
+                "author_avatar": "",
+                "view": ups,
+                "like": ups,
+                "reply": comments,
+                "share": 0,
+                "view_text": format_count(ups) + " upvotes",
+                "like_text": f"{int(upvote_ratio * 100)}%" if upvote_ratio else "—",
+                "reply_text": format_count(comments),
+                "share_text": post.get("link_flair_text") or "—",
+                "url": url,
+                "cover": thumbnail,
+                "bvid": post.get("id", ""),
+                "score": score,
+            }
+        )
 
     return {
         "platform": "reddit",
@@ -140,8 +163,7 @@ def save_to_json(data: dict):
 def print_preview(data: dict, top_n: int = 5):
     print(f"\n=== Reddit r/videos · {data['date']} · 前 {top_n} 条 ===\n")
     for v in data["videos"][:top_n]:
-        # 标题太长截断, 终端美观
-        title = v['title']
+        title = v["title"]
         if len(title) > 70:
             title = title[:67] + "..."
         print(f"#{v['rank']:>2}  {title}")
@@ -152,7 +174,12 @@ def print_preview(data: dict, top_n: int = 5):
 
 
 if __name__ == "__main__":
-    data = fetch_reddit_top(top_n=10)
-    save_to_json(data)
-    print_preview(data, top_n=5)
-    print(f"✅  完成！共抓取 {len(data['videos'])} 条")
+    try:
+        data = fetch_reddit_top(top_n=10)
+        save_to_json(data)
+        print_preview(data, top_n=5)
+        print(f"✅  完成！共抓取 {len(data['videos'])} 条")
+    except Exception as e:
+        print(f"⚠️ Reddit 抓取失败：{e}")
+        # 关键：退出 0，避免影响其它平台定时任务
+        raise SystemExit(0)

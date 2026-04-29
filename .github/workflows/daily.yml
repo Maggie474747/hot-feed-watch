@@ -34,9 +34,9 @@ jobs:
 
       - name: Run fetch scripts (without TikTok)
         run: |
-          python fetch_bilibili.py
-          python fetch_weibo.py
-          python fetch_reddit.py
+          python fetch_bilibili.py || echo "bilibili failed"
+          python fetch_weibo.py || echo "weibo failed"
+          python fetch_reddit.py || echo "reddit failed"
 
       - name: Commit and push updated data
         run: |
