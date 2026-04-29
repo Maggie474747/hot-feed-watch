@@ -2,7 +2,7 @@ name: Daily Hot Feed Fetch
 
 on:
   schedule:
-    - cron: "0 0 * * *" # UTC 00:00 = 北京时间 08:00
+    - cron: "0 0,9 * * *" # 北京时间 08:00 和 北京时间17:00执行
   workflow_dispatch:
 
 permissions:
