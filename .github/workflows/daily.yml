@@ -33,11 +33,14 @@ jobs:
         run: mkdir -p data
 
       - name: Run fetch scripts
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           python fetch_bilibili.py || echo "bilibili failed"
           python fetch_weibo.py || echo "weibo failed"
           python fetch_reddit.py || echo "reddit failed"
           python fetch_douyin.py || echo "douyin failed"
+          python fetch_youtube.py || echo "youtube failed"
 
       - name: Commit and push updated data
         run: |
