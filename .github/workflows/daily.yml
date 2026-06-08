@@ -32,11 +32,12 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p data
 
-      - name: Run fetch scripts (without TikTok)
+      - name: Run fetch scripts
         run: |
           python fetch_bilibili.py || echo "bilibili failed"
           python fetch_weibo.py || echo "weibo failed"
           python fetch_reddit.py || echo "reddit failed"
+          python fetch_douyin.py || echo "douyin failed"
 
       - name: Commit and push updated data
         run: |
